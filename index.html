@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Modern Reward App</title>
+    
+    <!-- Telegram WebApp SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
+    <!-- Fix for annoying internal Telegram CloudStorage Error on older versions -->
+    <script>
+        const originalConsoleError = console.error;
+        console.error = function(...args) {
+            if (args[0] && typeof args[0] === 'string' && args[0].includes('CloudStorage is not supported')) {
+                return; // Hide this specific Telegram SDK warning
+            }
+            originalConsoleError.apply(console, args);
+        };
+    </script>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <!-- REAL AD NETWORK SDK -->
+    <script src="https://libtl.com/sdk.js" data-zone="10711716" data-sdk="show_10711716"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #070b14;
+            --bg-grad: linear-gradient(135deg, #0f172a, #070b14, #1e1b4b);
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --primary: #8b5cf6;
+            --primary-glow: rgba(139, 92, 246, 0.5);
+            --accent: #10b981;
+            --accent-glow: rgba(16, 185, 129, 0.5);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --card-radius: 20px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Poppins', sans-serif; user-select: none; }
+        
+        body {
+            background: var(--bg-dark);
+            background-image: var(--bg-grad);
+            color: var(--text-main);
+            min-height: 100vh;
+            overflow-x: hidden;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Utility Classes */
+        .glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-top: 1px solid rgba(255,255,255,0.2);
+            border-radius: var(--card-radius);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        .btn {
+            background: linear-gradient(to right, #7c3aed, #8b5cf6);
+            color: white;
+            border: none;
+            padding: 14px 20px;
+            border-radius: 14px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            width: 100%;
+            box-shadow: 0 4px 15px var(--primary-glow);
+        }
+        
+        .btn:active { transform: scale(0.95); }
+        .btn:disabled { background: #334155; box-shadow: none; cursor: not-allowed; opacity: 0.6; transform: none; }
+        .btn-accent { background: linear-gradient(to right, #059669, #10b981); box-shadow: 0 4px 15px var(--accent-glow); }
+        .btn-outline { background: transparent; border: 1px solid var(--text-muted); color: var(--text-muted); box-shadow: none; margin-top: 10px; }
+        
+        /* Header */
+        .header {
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: rgba(7, 11, 20, 0.85);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--glass-border);
+        }
+        .header .user-info { display: flex; align-items: center; gap: 10px; }
+        .header h3 { font-weight: 600; font-size: 16px; }
+        .coin-badge { background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); padding: 6px 14px; border-radius: 30px; font-weight: 700; color: #fcd34d; display: flex; align-items: center; gap: 6px; box-shadow: 0 0 10px rgba(245, 158, 11, 0.2); }
+
+        .view { display: none; padding: 20px 20px 100px 20px; animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        .view.active { display: block; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Dashboard */
+        .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 10px; }
+        .game-card { padding: 20px 15px; text-align: center; cursor: pointer; transition: transform 0.2s; position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: space-between; min-height: 180px; }
+        .game-card:active { transform: scale(0.96); }
+        .game-card h2 { font-size: 18px; margin-bottom: 5px; font-weight: 700; }
+        .game-card p { color: var(--text-muted); font-size: 11px; margin-bottom: 15px; line-height: 1.3; }
+        .card-icon { font-size: 45px; margin-bottom: 10px; filter: drop-shadow(0 0 10px rgba(255,255,255,0.2)); }
+        
+        .play-badge { background: rgba(255,255,255,0.1); padding: 5px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; color: white; width: 100%; }
+        .locked-overlay { position: absolute; inset: 0; background: rgba(7, 11, 20, 0.9); backdrop-filter: blur(4px); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 2; border-radius: var(--card-radius); }
+
+        /* Spin Wheel */
+        .game-title { text-align: center; font-size: 24px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; background: linear-gradient(to right, #fff, #94a3b8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .stats { text-align: center; font-size: 14px; font-weight: 600; margin-bottom: 30px; color: var(--accent); }
+        .wheel-container { position: relative; width: 300px; height: 300px; margin: 0 auto 40px auto; }
+        .wheel-container::before { content: ''; position: absolute; inset: -15px; border-radius: 50%; border: 2px dashed rgba(139, 92, 246, 0.4); animation: spinSlow 20s linear infinite; }
+        @keyframes spinSlow { 100% { transform: rotate(360deg); } }
+        .wheel { width: 100%; height: 100%; border-radius: 50%; border: 8px solid #1e293b; transition: transform 4s cubic-bezier(0.15, 0.85, 0.25, 1); position: relative; overflow: hidden; box-shadow: 0 0 40px var(--primary-glow), inset 0 0 20px rgba(0,0,0,0.8); }
+        .wheel-needle { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); width: 34px; height: 40px; background: url('data:image/svg+xml;utf8,<svg viewBox="0 0 24 24" fill="%23f8fafc" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 22h20L12 2z"/></svg>') no-repeat center center; z-index: 5; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.6)); }
+        .wheel-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 50px; height: 50px; background: radial-gradient(circle, #334155, #0f172a); border: 4px solid #fff; border-radius: 50%; z-index: 4; box-shadow: 0 0 15px rgba(0,0,0,0.8); }
+
+        /* Scratch Card */
+        .scratch-container { width: 300px; height: 300px; margin: 0 auto 40px auto; position: relative; border-radius: var(--card-radius); overflow: hidden; box-shadow: 0 0 40px var(--accent-glow); border: 2px solid rgba(255,255,255,0.1); }
+        .scratch-reward { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; background: radial-gradient(circle, #1e293b, #0f172a); font-size: 42px; font-weight: 800; color: #fcd34d; text-shadow: 0 0 20px rgba(245, 158, 11, 0.5); }
+        #scratch-canvas { position: absolute; inset: 0; z-index: 2; cursor: pointer; }
+
+        /* Forms & Inputs */
+        .input-group { margin-bottom: 18px; text-align: left; }
+        .input-group label { display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; }
+        .input-group input, .input-group select { width: 100%; padding: 14px; border-radius: 12px; border: 1px solid var(--glass-border); background: rgba(0,0,0,0.25); color: white; font-size: 16px; outline: none; transition: border 0.3s; }
+        .input-group input:focus { border-color: var(--primary); box-shadow: 0 0 10px rgba(139, 92, 246, 0.2); }
+
+        /* Wallet */
+        .balance-card { padding: 35px 20px; text-align: center; margin-bottom: 25px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(16, 185, 129, 0.05)); }
+        .balance-amount { font-size: 48px; font-weight: 800; color: #fcd34d; margin: 5px 0; text-shadow: 0 0 15px rgba(245, 158, 11, 0.3); }
+        .rupee-value { color: var(--accent); font-size: 20px; font-weight: 700; margin-bottom: 10px; }
+        .tabs { display: flex; gap: 15px; margin-bottom: 25px; }
+        .tab-btn { flex: 1; padding: 12px; background: rgba(0,0,0,0.2); color: var(--text-muted); border: 1px solid var(--glass-border); border-radius: 12px; font-weight: 600; transition: 0.3s; cursor: pointer; }
+        .tab-btn.active { background: var(--primary); color: white; border-color: var(--primary); box-shadow: 0 4px 15px var(--primary-glow); }
+        .notice-box { background: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; padding: 15px; font-size: 12px; color: #cbd5e1; margin-top: 25px; text-align: left; line-height: 1.6; border-radius: 0 12px 12px 0; }
+
+        /* History */
+        .history-item { display: flex; justify-content: space-between; align-items: center; padding: 18px 15px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .history-item:last-child { border: none; }
+        .h-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+        .h-date { font-size: 12px; color: var(--text-muted); }
+        .h-amount { font-weight: 800; font-size: 16px; }
+        .status-pending { color: #f59e0b; font-size: 12px; font-weight: 600; margin-top: 4px; display: inline-block; background: rgba(245, 158, 11, 0.1); padding: 2px 8px; border-radius: 10px; }
+        
+        /* Navigation */
+        .nav { position: fixed; bottom: 0; left: 0; width: 100%; background: rgba(7, 11, 20, 0.95); backdrop-filter: blur(15px); display: flex; justify-content: space-around; padding: 12px 0 20px 0; border-top: 1px solid var(--glass-border); z-index: 100; }
+        .nav-item { text-align: center; color: var(--text-muted); font-size: 11px; font-weight: 600; cursor: pointer; transition: color 0.3s; width: 25%; }
+        .nav-item.active { color: var(--primary); }
+        .nav-icon { font-size: 24px; display: block; margin-bottom: 5px; transition: transform 0.3s; }
+        .nav-item.active .nav-icon { transform: translateY(-3px) scale(1.1); filter: drop-shadow(0 0 8px var(--primary-glow)); }
+
+        /* Overlays & Modals */
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 200; display: none; justify-content: center; align-items: center; backdrop-filter: blur(8px); }
+        .modal { width: 85%; max-width: 320px; padding: 35px 25px; text-align: center; border-top: 1px solid rgba(255,255,255,0.2); }
+        .modal h3 { font-size: 26px; margin-bottom: 15px; font-weight: 800; }
+        .modal p { color: var(--text-muted); margin-bottom: 25px; font-size: 15px; }
+        #reward-val-text { font-size: 32px; font-weight: 800; color: #fcd34d; margin-bottom: 25px; text-shadow: 0 0 15px rgba(245,158,11,0.4); }
+        
+        .coin-anim { position: fixed; font-weight: 800; color: #fcd34d; font-size: 28px; pointer-events: none; text-shadow: 0 0 20px rgba(245, 158, 11, 0.8); animation: floatUp 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; z-index: 400; }
+        @keyframes floatUp { 0% { opacity: 1; transform: translate(-50%, -50%) scale(0.5); } 50% { transform: translate(-50%, -100px) scale(1.2); } 100% { opacity: 0; transform: translate(-50%, -150px) scale(1); } }
+    </style>
+</head>
+<body>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="overlay" style="display: flex; z-index: 9999; background: var(--bg-dark); flex-direction: column;">
+        <div class="card-icon" style="font-size: 60px; animation: spinSlow 3s linear infinite;">🎡</div>
+        <h3 id="loading-title" style="margin-top: 20px; color: var(--primary); font-weight: 700;">Loading Data...</h3>
+        <p id="loading-desc" style="color: var(--text-muted); font-size: 12px; margin-top: 10px;">Connecting to secure server</p>
+    </div>
+
+    <!-- Header -->
+    <div class="header">
+        <div class="user-info">
+            <h3 id="top-name">Hi, User</h3>
+        </div>
+        <div class="coin-badge">
+            🪙 <span id="top-coins">0</span>
+        </div>
+    </div>
+
+    <!-- 1. DASHBOARD VIEW -->
+    <div id="view-dashboard" class="view active">
+        <h2 style="font-size: 22px; margin-bottom: 5px; font-weight: 700;">Choose a Game</h2>
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 10px;">Play games to earn daily coins</p>
+        
+        <div class="dashboard-grid">
+            <div class="glass game-card" onclick="openGame('spin')">
+                <div class="card-icon">🎡</div>
+                <div>
+                    <h2>Spin Wheel</h2>
+                    <p>Win up to 20 coins per spin</p>
+                </div>
+                <div class="play-badge">Play Now</div>
+            </div>
+
+            <div class="glass game-card" id="scratch-dashboard-card" onclick="openGame('scratch')">
+                <div id="scratch-locked-overlay" class="locked-overlay">
+                    <div class="card-icon" style="font-size: 35px; opacity: 0.8;">🔒</div>
+                    <h3 style="color: white; margin-bottom: 5px; font-size: 16px;">Locked</h3>
+                    <p style="color: #94a3b8; font-size: 10px; padding: 0 10px;">Do 10 spins to unlock</p>
+                </div>
+                <div class="card-icon">🎫</div>
+                <div>
+                    <h2>Scratch Card</h2>
+                    <p>Guaranteed instant coins</p>
+                </div>
+                <div class="play-badge">Play Now</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SPIN GAME VIEW -->
+    <div id="view-spin" class="view">
+        <div class="game-title">Spin & Win</div>
+        <div class="stats" id="spin-limit-text">Spins Today: 0/10</div>
+        
+        <div class="wheel-container">
+            <div class="wheel-needle"></div>
+            <div class="wheel" id="wheel"></div>
+            <div class="wheel-center"></div>
+        </div>
+        
+        <button id="spin-btn" class="btn" onclick="startSpin()">Spin Now</button>
+    </div>
+
+    <!-- SCRATCH GAME VIEW -->
+    <div id="view-scratch" class="view">
+        <div class="game-title">Scratch & Win</div>
+        <div class="stats" id="scratch-limit-text">Cards Today: 0/10</div>
+
+        <div class="scratch-container">
+            <div class="scratch-reward" id="scratch-reward-text">🪙 ?</div>
+            <canvas id="scratch-canvas"></canvas>
+        </div>
+
+        <button id="scratch-btn" class="btn btn-accent" style="margin-top: 10px;" disabled>Scratch the card above</button>
+    </div>
+
+    <!-- 2. WALLET VIEW -->
+    <div id="view-wallet" class="view">
+        <div class="glass balance-card">
+            <p style="color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 13px;">Total Balance</p>
+            <div class="balance-amount">🪙 <span id="wallet-coins">0</span></div>
+            <div class="rupee-value">≈ ₹<span id="wallet-inr">0.00</span></div>
+            <p style="font-size: 12px; color: var(--text-muted); font-weight: 600;">(50 Coins = ₹1)</p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchWithdrawTab('upi')">UPI Transfer</button>
+            <button class="tab-btn" onclick="switchWithdrawTab('recharge')">Mobile Recharge</button>
+        </div>
+
+        <div id="form-upi" class="glass" style="padding: 25px 20px;">
+            <div class="input-group">
+                <label>UPI ID</label>
+                <input type="text" id="upi-id" placeholder="e.g. name@okhdfc">
+            </div>
+            <div class="input-group">
+                <label>Amount (Coins)</label>
+                <input type="number" id="upi-amount" placeholder="Min 500 Coins">
+            </div>
+            <button class="btn btn-accent" style="margin-top: 10px;" onclick="submitWithdrawal('upi')">Withdraw to UPI</button>
+        </div>
+
+        <div id="form-recharge" class="glass" style="padding: 25px 20px; display: none;">
+            <div class="input-group">
+                <label>Mobile Number</label>
+                <input type="tel" id="rec-number" placeholder="10-digit number">
+            </div>
+            <div class="input-group">
+                <label>Select Operator</label>
+                <select id="rec-operator">
+                    <option value="Jio">Reliance Jio</option>
+                    <option value="Airtel">Bharti Airtel</option>
+                    <option value="Vi">Vodafone Idea (Vi)</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label>Recharge Amount (₹)</label>
+                <input type="number" id="rec-amount" placeholder="Amount in ₹">
+            </div>
+            <button class="btn btn-accent" style="margin-top: 10px;" onclick="submitWithdrawal('recharge')">Request Recharge</button>
+        </div>
+
+        <div class="glass notice-box">
+            <strong style="color: #f8fafc; font-size: 14px;">Withdrawal Notice</strong><br><br>
+            If your reward is not credited to your UPI wallet within 24 hours, there is no need to panic. 
+            The chance of delay is extremely low (0.05%). We are a trustworthy app.<br><br>
+            All withdrawals are processed manually by the developer to ensure security, so there is no possibility of fraud.<br>
+            Your reward will be safely credited to your UPI wallet.
+        </div>
+        <p style="font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 20px;">This app provides promotional rewards and does not guarantee income.</p>
+    </div>
+
+    <!-- 3. HISTORY VIEW -->
+    <div id="view-history" class="view">
+        <h2 style="margin-bottom: 20px; font-weight: 700;">Transaction History</h2>
+        <div id="history-list" class="glass" style="padding: 5px;"></div>
+    </div>
+
+    <!-- 4. PROFILE VIEW -->
+    <div id="view-profile" class="view">
+        <h2 style="margin-bottom: 20px; font-weight: 700;">My Profile</h2>
+        <div class="glass" style="padding: 25px 20px;">
+            <div class="input-group">
+                <label>Full Name</label>
+                <input type="text" id="prof-name" placeholder="Enter Name">
+            </div>
+            <div class="input-group">
+                <label>Age</label>
+                <input type="number" id="prof-age" placeholder="Enter Age">
+            </div>
+            <div class="input-group">
+                <label>Mobile Number</label>
+                <input type="tel" id="prof-mobile" placeholder="Enter Mobile Number">
+            </div>
+            <button class="btn" style="margin-top: 10px;" onclick="saveProfile()">Save Changes</button>
+        </div>
+    </div>
+
+    <!-- Navigation Bar -->
+    <div class="nav">
+        <div class="nav-item active" onclick="switchTab('dashboard', this)">
+            <span class="nav-icon">🏠</span> Home
+        </div>
+        <div class="nav-item" onclick="switchTab('wallet', this)">
+            <span class="nav-icon">💳</span> Wallet
+        </div>
+        <div class="nav-item" onclick="switchTab('history', this)">
+            <span class="nav-icon">📜</span> History
+        </div>
+        <div class="nav-item" onclick="switchTab('profile', this)">
+            <span class="nav-icon">👤</span> Profile
+        </div>
+    </div>
+
+    <!-- Custom Alert Modal -->
+    <div class="overlay" id="custom-alert-modal">
+        <div class="glass modal" style="padding: 25px;">
+            <div style="font-size: 40px; margin-bottom: 10px;">⚠️</div>
+            <h3 style="color: white; font-size: 20px; margin-bottom: 10px;" id="alert-title">Notice</h3>
+            <p id="alert-msg" style="color: #cbd5e1; margin-bottom: 20px; font-size: 14px;">Message</p>
+            <button class="btn btn-accent" onclick="closeCustomAlert()">OK</button>
+        </div>
+    </div>
+
+    <!-- Reward Modals -->
+    <div class="overlay" id="reward-modal">
+        <div class="glass modal">
+            <h3 style="color: var(--accent);">🎉 You Won!</h3>
+            <div id="reward-val-text">10 Coins</div>
+            <button class="btn" onclick="startAd()">Watch Ad to Claim</button>
+            <button class="btn btn-outline" onclick="closeRewardModal()">Skip (Lose Reward)</button>
+        </div>
+    </div>
+
+    <div class="overlay" id="success-modal">
+        <div class="glass modal">
+            <h3 style="color: var(--accent);">✅ Success!</h3>
+            <p id="success-msg" style="font-weight: 600; color: white;">Reward added to wallet.</p>
+            <button class="btn btn-accent" onclick="closeSuccess()">Continue Playing</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. TELEGRAM SETUP ---
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        let userId = tg.initDataUnsafe?.user?.id || "test_user_" + Math.floor(Math.random() * 10000);
+
+        // --- 2. FIREBASE SETUP ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyAnrHVS8OUU1YPA-cpW1FHvw0IcU82ldK0",
+            authDomain: "loop-reward-a66d5.firebaseapp.com",
+            databaseURL: "https://loop-reward-a66d5-default-rtdb.firebaseio.com",
+            projectId: "loop-reward-a66d5",
+            storageBucket: "loop-reward-a66d5.firebasestorage.app",
+            messagingSenderId: "472958823305",
+            appId: "1:472958823305:web:13062863d99327cfac8f58",
+            measurementId: "G-1G02ZVZ6ZV"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        // --- 3. CUSTOM ALERT ---
+        function showMessage(msg, title = "Notice") {
+            document.getElementById('alert-title').innerText = title;
+            document.getElementById('alert-msg').innerText = msg;
+            document.getElementById('custom-alert-modal').style.display = 'flex';
+        }
+        function closeCustomAlert() {
+            document.getElementById('custom-alert-modal').style.display = 'none';
+        }
+
+        // --- 4. APP STATE & CONFIG ---
+        const GAME_VALUES = [10, 13, 15, 16, 18, 20];
+        const CONVERSION_RATE = 50; 
+        
+        let isGameActive = false; 
+
+        let db = {
+            coins: 0,
+            spinsUsed: 0,
+            scratchesUsed: 0,
+            lastSpinTime: 0,
+            lastScratchTime: 0,
+            lastDate: new Date().toDateString(),
+            history: [],
+            profile: { name: tg.initDataUnsafe?.user?.first_name || '', age: '', mobile: '' }
+        };
+
+        let tempReward = 0;
+        let tempGameType = ''; 
+        let scratchCanvas, scratchCtx;
+
+        // --- 5. INITIALIZATION & DATA SYNC ---
+        window.onload = function initApp() {
+            database.ref('users/' + userId).once('value', (snapshot) => {
+                const data = snapshot.val();
+                
+                if (data) {
+                    db = data;
+                    if(!db.history) db.history = [];
+                    if(typeof db.history === 'object' && !Array.isArray(db.history)) {
+                        db.history = Object.values(db.history);
+                    }
+                    if(!db.profile) db.profile = { name: tg.initDataUnsafe?.user?.first_name || '', age: '', mobile: '' };
+                } else {
+                    saveDataToFirebase();
+                }
+
+                document.getElementById('loading-overlay').style.display = 'none';
+                
+                checkDailyReset();
+                updateUI();
+                setupWheel();
+                setupScratch();
+                
+                document.getElementById('prof-name').value = db.profile.name;
+                document.getElementById('prof-age').value = db.profile.age;
+                document.getElementById('prof-mobile').value = db.profile.mobile;
+
+                setInterval(updateCooldowns, 1000);
+            });
+        };
+
+        function saveDataToFirebase() {
+            updateUI();
+            database.ref('users/' + userId).set(db).catch((err) => {
+                console.error("Sync Error", err);
+            });
+        }
+
+        function checkDailyReset() {
+            const today = new Date().toDateString();
+            if (db.lastDate !== today) {
+                db.spinsUsed = 0;
+                db.scratchesUsed = 0;
+                db.lastDate = today;
+                saveDataToFirebase();
+            }
+        }
+
+        function updateUI() {
+            document.getElementById('top-coins').innerText = db.coins;
+            document.getElementById('wallet-coins').innerText = db.coins;
+            document.getElementById('wallet-inr').innerText = (db.coins / CONVERSION_RATE).toFixed(2);
+            document.getElementById('top-name').innerText = `Hi, ${db.profile.name || 'User'}`;
+
+            document.getElementById('spin-limit-text').innerText = `Spins Today: ${db.spinsUsed}/10`;
+            document.getElementById('scratch-limit-text').innerText = `Cards Today: ${db.scratchesUsed}/10`;
+
+            const lockedOverlay = document.getElementById('scratch-locked-overlay');
+            if (db.spinsUsed >= 10) {
+                lockedOverlay.style.display = 'none';
+            } else {
+                lockedOverlay.style.display = 'flex';
+            }
+
+            renderHistory();
+        }
+
+        // --- 6. NAVIGATION ---
+        function switchTab(tabId, elem) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById(`view-${tabId}`).classList.add('active');
+            if(elem) elem.classList.add('active');
+        }
+
+        function openGame(game) {
+            if (game === 'scratch' && db.spinsUsed < 10) {
+                showMessage("Complete 10 spins first to unlock Scratch Card!", "Locked");
+                return;
+            }
+            switchTab(game, null);
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        }
+
+        // --- 7. SPIN WHEEL LOGIC ---
+        function setupWheel() {
+            const wheel = document.getElementById('wheel');
+            const colors = [['#8b5cf6', '#6d28d9'], ['#3b82f6', '#1d4ed8'], ['#10b981', '#047857'], ['#f59e0b', '#b45309'], ['#ef4444', '#b91c1c'], ['#ec4899', '#be185d']];
+            let gradient = 'conic-gradient(';
+            let step = 360 / 6;
+            
+            GAME_VALUES.forEach((val, i) => {
+                let start = i * step;
+                let end = start + step;
+                gradient += `${colors[i][0]} ${start}deg, ${colors[i][1]} ${end}deg${i===5 ? ')' : ','}`;
+            });
+            wheel.style.background = gradient;
+            
+            wheel.innerHTML = '';
+            GAME_VALUES.forEach((val, i) => {
+                let deg = (i * step) + (step / 2);
+                let num = document.createElement('div');
+                num.innerText = val;
+                num.style.position = 'absolute';
+                num.style.top = '15px';
+                num.style.left = '50%';
+                num.style.transform = `translateX(-50%) rotate(${deg}deg)`;
+                num.style.transformOrigin = '50% 127px';
+                num.style.color = 'white';
+                num.style.fontWeight = '800';
+                num.style.fontSize = '24px';
+                num.style.textShadow = '0 2px 4px rgba(0,0,0,0.8)';
+                wheel.appendChild(num);
+            });
+        }
+
+        let currentRotation = 0;
+        function startSpin() {
+            if (isGameActive) return; 
+            if (db.spinsUsed >= 10) return showMessage("Daily spin limit reached!");
+            if (Date.now() - db.lastSpinTime < 30000) return;
+
+            isGameActive = true; 
+            const btn = document.getElementById('spin-btn');
+            btn.disabled = true;
+
+            const prizeIndex = Math.floor(Math.random() * 6);
+            tempReward = GAME_VALUES[prizeIndex];
+            tempGameType = 'spin';
+
+            const segmentDegree = 360 / 6;
+            const extraRotations = 360 * 5; 
+            const targetDegree = extraRotations + (360 - (prizeIndex * segmentDegree)) - (segmentDegree/2);
+            
+            currentRotation += targetDegree;
+            const wheel = document.getElementById('wheel');
+            wheel.style.transform = `rotate(${currentRotation}deg)`;
+
+            setTimeout(() => { showRewardModal(tempReward); }, 4200);
+        }
+
+        // --- 8. SMOOTH SCRATCH CARD LOGIC ---
+        let isDrawing = false;
+        let lastX = 0, lastY = 0, scratchMoves = 0;
+        
+        function setupScratch() {
+            const canvas = document.getElementById('scratch-canvas');
+            scratchCanvas = canvas;
+            scratchCtx = canvas.getContext('2d');
+            canvas.width = 300;
+            canvas.height = 300;
+
+            resetScratchCanvas();
+
+            canvas.addEventListener('mousedown', startScratch);
+            canvas.addEventListener('mousemove', scratch);
+            canvas.addEventListener('mouseup', endScratch);
+            canvas.addEventListener('mouseleave', endScratch);
+
+            canvas.addEventListener('touchstart', startScratch, {passive: false});
+            canvas.addEventListener('touchmove', scratch, {passive: false});
+            canvas.addEventListener('touchend', endScratch);
+        }
+
+        function resetScratchCanvas() {
+            scratchCtx.globalCompositeOperation = 'source-over';
+            let grad = scratchCtx.createLinearGradient(0, 0, 300, 300);
+            grad.addColorStop(0, '#475569'); grad.addColorStop(1, '#1e293b');
+            scratchCtx.fillStyle = grad;
+            scratchCtx.fillRect(0, 0, scratchCanvas.width, scratchCanvas.height);
+            
+            scratchCtx.fillStyle = '#cbd5e1';
+            scratchCtx.font = '600 22px Poppins';
+            scratchCtx.textAlign = 'center';
+            scratchCtx.fillText('SCRATCH HERE', 150, 160);
+
+            scratchMoves = 0;
+            document.getElementById('scratch-reward-text').innerText = '🪙 ?';
+        }
+
+        function getMousePos(e) {
+            const rect = scratchCanvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            const scaleX = scratchCanvas.width / rect.width;
+            const scaleY = scratchCanvas.height / rect.height;
+            return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+        }
+
+        function startScratch(e) {
+            if (isGameActive && scratchMoves === 0) return;
+            if (db.scratchesUsed >= 10) return showMessage("Daily limit reached!");
+            if (Date.now() - db.lastScratchTime < 30000) return;
+
+            e.preventDefault();
+            isDrawing = true;
+            
+            if(scratchMoves === 0) {
+                tempReward = GAME_VALUES[Math.floor(Math.random() * GAME_VALUES.length)];
+                tempGameType = 'scratch';
+                document.getElementById('scratch-reward-text').innerText = `🪙 ${tempReward}`;
+            }
+
+            const pos = getMousePos(e);
+            lastX = pos.x; lastY = pos.y;
+            
+            scratchCtx.globalCompositeOperation = 'destination-out';
+            scratchCtx.beginPath();
+            scratchCtx.arc(lastX, lastY, 25, 0, Math.PI * 2);
+            scratchCtx.fill();
+        }
+
+        function scratch(e) {
+            if (!isDrawing) return;
+            e.preventDefault();
+            const pos = getMousePos(e);
+            
+            scratchCtx.globalCompositeOperation = 'destination-out';
+            scratchCtx.lineWidth = 50; 
+            scratchCtx.lineCap = 'round';
+            scratchCtx.lineJoin = 'round';
+            
+            scratchCtx.beginPath();
+            scratchCtx.moveTo(lastX, lastY);
+            scratchCtx.lineTo(pos.x, pos.y);
+            scratchCtx.stroke();
+            
+            lastX = pos.x; lastY = pos.y;
+            scratchMoves++;
+            checkScratchProgress();
+        }
+
+        function endScratch() { isDrawing = false; }
+
+        function checkScratchProgress() {
+            if (scratchMoves > 45 && !isGameActive) {
+                isGameActive = true; 
+                scratchCtx.clearRect(0, 0, scratchCanvas.width, scratchCanvas.height);
+                isDrawing = false;
+                scratchMoves = 0; 
+                setTimeout(() => { showRewardModal(tempReward); }, 400);
+            }
+        }
+
+        // --- 9. MODALS & REAL AD NETWORK INTEGRATION ---
+        function showRewardModal(amount) {
+            document.getElementById('reward-val-text').innerText = `${amount} Coins`;
+            document.getElementById('reward-modal').style.display = 'flex';
+        }
+
+        function closeRewardModal() {
+            document.getElementById('reward-modal').style.display = 'none';
+            isGameActive = false; 
+            if (tempGameType === 'scratch') {
+                resetScratchCanvas();
+            }
+        }
+
+        function startAd() {
+            document.getElementById('reward-modal').style.display = 'none';
+            
+            document.getElementById('loading-title').innerText = "Loading Ad...";
+            document.getElementById('loading-desc').innerText = "Please wait, ad is fetching...";
+            document.getElementById('loading-overlay').style.display = 'flex';
+
+            if (typeof window.show_10711716 === 'function') {
+                window.show_10711716().then(() => {
+                    document.getElementById('loading-overlay').style.display = 'none';
+                    processReward();
+                }).catch((error) => {
+                    document.getElementById('loading-overlay').style.display = 'none';
+                    isGameActive = false; 
+                    showMessage("Ad closed early or no ad available right now. Please try again.", "Ad Failed");
+                });
+            } else {
+                document.getElementById('loading-overlay').style.display = 'none';
+                isGameActive = false; 
+                showMessage("Ad network is currently unavailable. Please turn off your AdBlocker or try again later.", "Ad Error");
+            }
+        }
+
+        function processReward() {
+            db.coins += tempReward;
+            
+            if (tempGameType === 'spin') {
+                db.spinsUsed++;
+                db.lastSpinTime = Date.now();
+            } else if (tempGameType === 'scratch') {
+                db.scratchesUsed++;
+                db.lastScratchTime = Date.now();
+                resetScratchCanvas(); 
+            }
+
+            db.history.unshift({
+                id: Date.now(),
+                title: `${tempGameType === 'spin' ? 'Spin Wheel' : 'Scratch Card'} Reward`,
+                amount: `+${tempReward}`,
+                type: 'earn',
+                date: new Date().toLocaleString()
+            });
+            if(db.history.length > 50) db.history.pop();
+
+            saveDataToFirebase();
+            
+            isGameActive = false; 
+            showCoinAnimation(tempReward);
+            document.getElementById('success-msg').innerText = `Successfully added ${tempReward} coins!`;
+            document.getElementById('success-modal').style.display = 'flex';
+        }
+
+        function closeSuccess() { document.getElementById('success-modal').style.display = 'none'; }
+
+        function showCoinAnimation(amount) {
+            const el = document.createElement('div');
+            el.className = 'coin-anim';
+            el.innerText = `+${amount} 🪙`;
+            el.style.top = '50%'; el.style.left = '50%';
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 1200);
+        }
+
+        // --- 10. COOLDOWNS ---
+        function updateCooldowns() {
+            const now = Date.now();
+            
+            const spinBtn = document.getElementById('spin-btn');
+            if (db.spinsUsed >= 10) {
+                spinBtn.innerText = "Daily Limit Reached";
+                spinBtn.disabled = true;
+            } else {
+                const sDiff = 30000 - (now - db.lastSpinTime);
+                if (sDiff > 0) {
+                    spinBtn.innerText = `Wait ${Math.ceil(sDiff/1000)}s`;
+                    spinBtn.disabled = true;
+                } else if (!isGameActive) { 
+                    spinBtn.innerText = "Spin Now";
+                    spinBtn.disabled = false;
+                }
+            }
+
+            const scratchBtn = document.getElementById('scratch-btn');
+            if (db.scratchesUsed >= 10) {
+                scratchBtn.innerText = "Daily Limit Reached";
+                scratchBtn.disabled = true;
+            } else {
+                const scDiff = 30000 - (now - db.lastScratchTime);
+                if (scDiff > 0) {
+                    scratchBtn.innerText = `Wait ${Math.ceil(scDiff/1000)}s`;
+                    scratchBtn.disabled = true;
+                    scratchCanvas.style.pointerEvents = 'none';
+                } else if (!isGameActive) {
+                    scratchBtn.innerText = "Scratch the card above";
+                    scratchBtn.disabled = false;
+                    scratchCanvas.style.pointerEvents = 'auto';
+                }
+            }
+        }
+
+        // --- 11. WALLET & WITHDRAWAL ---
+        function switchWithdrawTab(type) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('form-upi').style.display = 'none';
+            document.getElementById('form-recharge').style.display = 'none';
+            
+            if(type === 'upi') {
+                document.querySelectorAll('.tab-btn')[0].classList.add('active');
+                document.getElementById('form-upi').style.display = 'block';
+            } else {
+                document.querySelectorAll('.tab-btn')[1].classList.add('active');
+                document.getElementById('form-recharge').style.display = 'block';
+            }
+        }
+
+        function submitWithdrawal(type) {
+            let cost = 0, title = '', details = {};
+
+            if (type === 'upi') {
+                const upiId = document.getElementById('upi-id').value;
+                const amt = parseInt(document.getElementById('upi-amount').value);
+                
+                if(!upiId) return showMessage("Please enter UPI ID", "Error");
+                if(!amt || amt < 500) return showMessage("Minimum withdrawal is 500 Coins (₹10)", "Error");
+                if(amt > db.coins) return showMessage("Insufficient Coins", "Error");
+
+                cost = amt;
+                title = `UPI Withdraw: ₹${(amt/CONVERSION_RATE).toFixed(2)}`;
+                details = { upiId: upiId, requestedInr: amt/CONVERSION_RATE };
+            } else {
+                const mob = document.getElementById('rec-number').value;
+                const op = document.getElementById('rec-operator').value;
+                const inrAmt = parseInt(document.getElementById('rec-amount').value);
+                
+                if(!mob || mob.length !== 10) return showMessage("Enter valid 10-digit number", "Error");
+                if(!inrAmt || inrAmt < 10) return showMessage("Min recharge amount is ₹10", "Error");
+
+                cost = inrAmt * CONVERSION_RATE;
+                if(cost > db.coins) return showMessage("Insufficient Coins", "Error");
+                
+                title = `Recharge: ${op} - ${mob} (₹${inrAmt})`;
+                details = { mobile: mob, operator: op, amountInr: inrAmt };
+            }
+
+            db.coins -= cost;
+            const historyItem = {
+                id: Date.now(),
+                title: title,
+                amount: `-${cost}`,
+                type: 'withdraw',
+                status: 'Pending',
+                date: new Date().toLocaleString()
+            };
+            db.history.unshift(historyItem);
+
+            saveDataToFirebase();
+            
+            database.ref('withdrawals').push({
+                userId: userId,
+                userName: db.profile.name,
+                userMobile: db.profile.mobile,
+                type: type,
+                costCoins: cost,
+                details: details,
+                status: 'Pending',
+                timestamp: firebase.database.ServerValue.TIMESTAMP
+            });
+
+            showMessage("Withdrawal Request Submitted Successfully!", "Success");
+            document.querySelectorAll('input').forEach(i => { if(i.id.startsWith('upi') || i.id.startsWith('rec')) i.value = ''; });
+        }
+
+        // --- 12. HISTORY & PROFILE ---
+        function renderHistory() {
+            const list = document.getElementById('history-list');
+            list.innerHTML = '';
+            
+            if(db.history.length === 0) {
+                list.innerHTML = '<p style="text-align:center; color:#94a3b8; padding:30px 10px;">No history found.</p>';
+                return;
+            }
+
+            db.history.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'history-item';
+                let amountHtml = `<div class="h-amount" style="color: ${item.type === 'earn' ? '#10b981' : '#ef4444'}">${item.amount}</div>`;
+                let statusHtml = item.status ? `<div class="status-pending">${item.status}</div>` : '';
+                div.innerHTML = `<div><div class="h-title">${item.title}</div><div class="h-date">${item.date}</div>${statusHtml}</div>${amountHtml}`;
+                list.appendChild(div);
+            });
+        }
+
+        function saveProfile() {
+            db.profile.name = document.getElementById('prof-name').value;
+            db.profile.age = document.getElementById('prof-age').value;
+            db.profile.mobile = document.getElementById('prof-mobile').value;
+            saveDataToFirebase();
+            showMessage("Profile Saved Successfully!", "Success");
+        }
+    </script>
+</body>
+</html>
